@@ -43,6 +43,7 @@ export const toolNames = {
   LIST_CONFIGURATION_REVISIONS: 'list_configuration_revisions',
   CONFIGURATION_TO_SAVE: 'configuration_save',
   GET_CONFIGURATION: 'configuration_get',
+  MANAGE_CONFIG_MAPS: 'manage_config_maps',
 
   // runtime tools
   LIST_PODS: 'list_pods',
@@ -94,6 +95,13 @@ export const toolsDescriptions = {
   LIST_CONFIGURATION_REVISIONS: 'List all the available revisions and tags for a project configuration',
   CONFIGURATION_TO_SAVE: 'Save the configuration for a project',
   GET_CONFIGURATION: 'Get the actual configuration for a project for a specific revision or tag',
+  MANAGE_CONFIG_MAPS: `Manage config maps in a project configuration. Supports multiple operations:
+  - list: List all config maps in the project
+  - get: Get a specific config map by name
+  - create: Create a new config map (fails if already exists)
+  - update: Update an existing config map, replacing all files (fails if not exists)
+  - delete: Delete a config map (fails if referenced by any service)
+  Config map names must follow Kubernetes DNS-1123 format: lowercase alphanumeric characters or hyphens, starting and ending with alphanumeric.`,
 }
 
 export const paramsDescriptions = {
@@ -905,6 +913,24 @@ export const paramsDescriptions = {
     ]
   }
 `,
+  OPERATION: `The operation to perform on config maps. Possible values:
+  - list: Returns all config maps in the project (no other parameters required)
+  - get: Returns a specific config map (requires configMapName)
+  - create: Creates a new config map (requires configMapName and files, fails if already exists)
+  - update: Updates an existing config map by replacing all files (requires configMapName and files, fails if not exists)
+  - delete: Deletes a config map (requires configMapName, fails if referenced by any service)`,
+  CONFIG_MAP_NAME: 'The name of the config map. Must follow Kubernetes DNS-1123 subdomain format: lowercase alphanumeric characters or hyphens, must start and end with alphanumeric, max 253 characters. Examples: my-config, app-settings, config123',
+  CONFIG_MAP_FILES: `Array of files to include in the config map. Each file must have a name and content. Example:
+  [
+    {
+      "name": "application.json",
+      "content": "{\\"port\\": 8080, \\"env\\": \\"production\\"}"
+    },
+    {
+      "name": "nginx.conf",
+      "content": "server { listen 80; }" 
+    }
+  ]`,
   SERVICE_ACCOUNTS: `The service accounts to create or update. The key is the name of the service account, the value is the service account name.
   An example of a service account is:
   {

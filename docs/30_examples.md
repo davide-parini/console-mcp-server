@@ -59,3 +59,44 @@ Create a CRUD Service for an inventory management system with the following coll
 
 Add appropriate indexes for optimizing common queries
 ```
+
+## Config Maps Management
+
+```txt
+List all config maps in project {projectName} for the main branch
+```
+
+```txt
+Show me the details of the config map named {configMapName} in project {projectName}
+```
+
+```txt
+Create a new config map named app-settings in project {projectName} with the following files:
+  - application.json containing {"port": 8080, "env": "production", "debug": false}
+  - database.conf containing host=db.example.com port=5432
+```
+
+```txt
+In project {projectName}, create a config map called nginx-config with a file nginx.conf containing the following configuration:
+server {
+  listen 80;
+  server_name example.com;
+  location / {
+    proxy_pass http://backend:3000;
+  }
+}
+```
+
+```txt
+Update the config map {configMapName} in project {projectName} by replacing all files with:
+  - settings.yaml containing debug: true and log_level: info
+  - env.conf containing ENV=staging and MAX_CONNECTIONS=100
+```
+
+```txt
+Delete the config map named {configMapName} from project {projectName} if it's not being used by any service
+```
+
+```txt
+In project {projectName}, check which config maps exist and create a new one called api-config with configuration files for the API gateway including rate limits and CORS settings
+```

@@ -25,7 +25,12 @@ import {
   ResourcesToCreate,
   SaveConfigurationOptions,
   SaveResponse,
-} from '../../apis/types/governance'
+} from '../../apis/types/configuration'
+
+interface TextContent {
+  text: string
+  type: string
+}
 
 const revisions = [
   { name: 'main' },
@@ -342,5 +347,597 @@ suite('configuration save tool', () => {
         type: 'text',
       },
     ])
+  })
+})
+
+suite('manage config maps tool', () => {
+  const projectId = 'project123'
+  const refId = 'main'
+  const mockConfigMaps = {
+    'app-config': {
+      name: 'app-config',
+      files: [
+        { name: 'application.json', content: '{"port": 8080}' },
+        { name: 'settings.yaml', content: 'debug: true' },
+      ],
+    },
+    'db-config': {
+      name: 'db-config',
+      files: [
+        { name: 'database.conf', content: 'host=localhost' },
+      ],
+    },
+  }
+
+  const mockConfigWithReferences = {
+    configMaps: mockConfigMaps,
+    services: {
+      'api-service': {
+        name: 'api-service',
+        configMaps: [
+          { name: 'app-config', mountPath: '/config' },
+        ],
+      },
+    },
+    commitId: 'abc123',
+  }
+
+  suite('list operation', () => {
+    let client: Client
+
+    beforeEach(async () => {
+      client = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (projectId: string, _refId: string): Promise<Record<string, unknown>> {
+            if (projectId === 'error-project') {
+              throw new Error('error message')
+            }
+            return { configMaps: mockConfigMaps, commitId: 'abc123' }
+          },
+        } as APIClient)
+      })
+    })
+
+    test('should return all config maps', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'list',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: JSON.stringify(mockConfigMaps),
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return empty object when no config maps exist', async (t) => {
+      const clientEmpty = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (): Promise<Record<string, unknown>> {
+            return { configMaps: {}, commitId: 'abc123' }
+          },
+        } as unknown as APIClient)
+      })
+
+      const result = await clientEmpty.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'list',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: JSON.stringify({}),
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error on API failure', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId: 'error-project',
+            refId,
+            operation: 'list',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error list config map: error message',
+          type: 'text',
+        },
+      ])
+    })
+  })
+
+  suite('get operation', () => {
+    let client: Client
+
+    beforeEach(async () => {
+      client = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (projectId: string, _refId: string): Promise<Record<string, unknown>> {
+            if (projectId === 'error-project') {
+              throw new Error('error message')
+            }
+            return { configMaps: mockConfigMaps, commitId: 'abc123' }
+          },
+        } as APIClient)
+      })
+    })
+
+    test('should return specific config map', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'get',
+            configMapName: 'app-config',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: JSON.stringify(mockConfigMaps['app-config']),
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if config map not found', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'get',
+            configMapName: 'non-existent',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error get config map: Config map \'non-existent\' not found',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if configMapName is missing', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'get',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error: configMapName is required for \'get\' operation',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error for invalid config map name', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'get',
+            configMapName: 'Invalid_Name',
+          },
+        },
+      }, CallToolResultSchema)
+
+      const text: TextContent = result.content[0] as TextContent
+      t.assert.match(text.text, /must match Kubernetes DNS-1123 format/)
+    })
+  })
+
+  suite('create operation', () => {
+    let client: Client
+
+    beforeEach(async () => {
+      client = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (projectId: string, _refId: string): Promise<Record<string, unknown>> {
+            if (projectId === 'error-project') {
+              throw new Error('error message')
+            }
+            return { configMaps: mockConfigMaps, commitId: 'abc123' }
+          },
+          async saveConfiguration (
+            _projectId: string,
+            _refId: string,
+            _resourcesToCreate: ResourcesToCreate,
+            _options?: SaveConfigurationOptions,
+          ): Promise<SaveResponse> {
+            return mockSaveResponse
+          },
+        } as APIClient)
+      })
+    })
+
+    test('should create new config map successfully', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: 'new-config',
+            files: [
+              { name: 'config.json', content: '{}' },
+            ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Config map \'new-config\' created successfully with 1 file(s).',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should create config map with multiple files', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: 'multi-file-config',
+            files: [
+              { name: 'app.json', content: '{"key": "value"}' },
+              { name: 'settings.yaml', content: 'debug: true' },
+              { name: 'env.conf', content: 'ENV=prod' },
+            ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Config map \'multi-file-config\' created successfully with 3 file(s).',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if config map already exists', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: 'app-config',
+            files: [
+              { name: 'config.json', content: '{}' },
+            ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error create config map: Config map \'app-config\' already exists',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if files are missing', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: 'new-config',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error: files are required for \'create\' operation',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error for invalid name with uppercase', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: 'MyConfig',
+            files: [ { name: 'test.json', content: '{}' } ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      const text: TextContent = result.content[0] as TextContent
+      t.assert.match(text.text, /must match Kubernetes DNS-1123 format/)
+    })
+
+    test('should return error for name starting with hyphen', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'create',
+            configMapName: '-invalid',
+            files: [ { name: 'test.json', content: '{}' } ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      const text: TextContent = result.content[0] as TextContent
+      t.assert.match(text.text, /must match Kubernetes DNS-1123 format/)
+    })
+  })
+
+  suite('update operation', () => {
+    let client: Client
+
+    beforeEach(async () => {
+      client = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (projectId: string, _refId: string): Promise<Record<string, unknown>> {
+            if (projectId === 'error-project') {
+              throw new Error('error message')
+            }
+            return { configMaps: mockConfigMaps, commitId: 'abc123' }
+          },
+          async saveConfiguration (
+            _projectId: string,
+            _refId: string,
+            _resourcesToCreate: ResourcesToCreate,
+            _options?: SaveConfigurationOptions,
+          ): Promise<SaveResponse> {
+            return mockSaveResponse
+          },
+        } as APIClient)
+      })
+    })
+
+    test('should update existing config map successfully', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'update',
+            configMapName: 'app-config',
+            files: [
+              { name: 'updated.json', content: '{"updated": true}' },
+            ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Config map \'app-config\' updated successfully with 1 file(s).',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if config map does not exist', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'update',
+            configMapName: 'non-existent',
+            files: [
+              { name: 'config.json', content: '{}' },
+            ],
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error update config map: Config map \'non-existent\' does not exist',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if files are missing', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'update',
+            configMapName: 'app-config',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error: files are required for \'update\' operation',
+          type: 'text',
+        },
+      ])
+    })
+  })
+
+  suite('delete operation', () => {
+    let client: Client
+
+    beforeEach(async () => {
+      client = await TestMCPServer((server) => {
+        addConfigurationCapabilities(server, {
+          async getConfiguration (projectId: string, _refId: string): Promise<Record<string, unknown>> {
+            if (projectId === 'error-project') {
+              throw new Error('error message')
+            }
+            if (projectId === 'project-with-refs') {
+              return mockConfigWithReferences
+            }
+            return { configMaps: mockConfigMaps, services: {}, commitId: 'abc123' }
+          },
+          async saveConfiguration (
+            _projectId: string,
+            _refId: string,
+            _resourcesToCreate: ResourcesToCreate,
+            _options?: SaveConfigurationOptions,
+          ): Promise<SaveResponse> {
+            return mockSaveResponse
+          },
+        } as APIClient)
+      })
+    })
+
+    test('should delete config map successfully', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'delete',
+            configMapName: 'db-config',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Config map \'db-config\' deleted successfully.',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if config map does not exist', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'delete',
+            configMapName: 'non-existent',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error delete config map: Config map \'non-existent\' does not exist',
+          type: 'text',
+        },
+      ])
+    })
+
+    test('should return error if config map is referenced by services', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId: 'project-with-refs',
+            refId,
+            operation: 'delete',
+            configMapName: 'app-config',
+          },
+        },
+      }, CallToolResultSchema)
+
+      const text: TextContent = result.content[0] as TextContent
+      t.assert.match(text.text, /Cannot delete config map 'app-config'/)
+      t.assert.match(text.text, /api-service/)
+    })
+
+    test('should return error if configMapName is missing', async (t) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'manage_config_maps',
+          arguments: {
+            projectId,
+            refId,
+            operation: 'delete',
+          },
+        },
+      }, CallToolResultSchema)
+
+      t.assert.deepEqual(result.content, [
+        {
+          text: 'Error: configMapName is required for \'delete\' operation',
+          type: 'text',
+        },
+      ])
+    })
   })
 })
