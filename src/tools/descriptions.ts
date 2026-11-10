@@ -49,10 +49,14 @@ export const toolNames = {
   CREATE_ENDPOINTS: 'create_endpoints',
   LIST_PUBLIC_VARIABLES: 'list_public_variables',
   SAVE_PUBLIC_VARIABLES: 'save_public_variables',
+  CREATE_VERSION: 'create_version',
+  GET_VERSION: 'get_version',
+  DELETE_VERSION: 'delete_version',
 
   // runtime tools
   LIST_PODS: 'list_pods',
   GET_POD_LOGS: 'get_pod_logs',
+  RESTART_PODS: 'restart_pods',
 }
 
 export const toolsDescriptions = {
@@ -95,7 +99,9 @@ Do never attemp to fetch all the logs without a date range filter, as it could l
   CREATE_SERVICE_FROM_MARKETPLACE: `Create a new service in a Mia-Platform Console project starting from an element of the marketplace. If the service is already in the project, ask confirmation to the user if he wants to create another one or use the existing one.`,
 
   // deploy tools
-  DEPLOY_PROJECT: `Deploy a project in a specific environment for the given company or tenant. Before running deploy, check differences using the tool ${toolNames.COMPARE_UPDATE_FOR_DEPLOY}. After running deploy, check the status of the pipeline using the tool ${toolNames.PIPELINE_STATUS}`,
+  DEPLOY_PROJECT: `Deploy a project in a specific environment for the given company or tenant. Before running deploy, check differences using the tool ${toolNames.COMPARE_UPDATE_FOR_DEPLOY}. After running deploy, check the status of the pipeline using the tool ${toolNames.PIPELINE_STATUS}.
+  The deploy type defaults to deploy_all, which deploys all services but restarts services whose image tag is not a semantic version (e.g. latest) only when forceDeployWhenNoSemver is true; smart_deploy deploys only the services whose configuration changed since the last deploy.
+  For a full deploy that redeploys every service, including those with non-semver image tags, use deployType deploy_all with forceDeployWhenNoSemver true.`,
   COMPARE_UPDATE_FOR_DEPLOY: 'Compare the current deployed configuration with the new configuration to be deployed. This is useful to see what will change in the project after the deployment',
   PIPELINE_STATUS: `Get the status of a pipeline given a pipeline id. This is useful to check if the deployment is finished or if it failed. After running ${toolNames.DEPLOY_PROJECT} tool, check the status of the pipeline using the tool ${toolNames.PIPELINE_STATUS}`,
 
@@ -105,6 +111,11 @@ Do never attemp to fetch all the logs without a date range filter, as it could l
     Get the logs of a specific pod in a project environment.
     It can be useful to debug issues with the running services.
   `,
+  RESTART_PODS: `
+    Restart one or more pods in a project environment by deleting them, so that their controller (Deployment, StatefulSet, etc.) recreates them.
+    The pod names must come from the response of the ${toolNames.LIST_PODS} tool.
+    This is a disruptive operation: ALWAYS ask the user for explicit confirmation before calling this tool, listing the pods that will be restarted.
+  `,
 
   // configuration management tools
   LIST_CONFIGURATION_REVISIONS: 'List all the available revisions and tags for a project configuration',
@@ -112,6 +123,17 @@ Do never attemp to fetch all the logs without a date range filter, as it could l
   GET_CONFIGURATION: 'Get the actual configuration for a project for a specific revision or tag',
   CREATE_COLLECTION: `Create a new CRUD collection in a project. This tool accepts the collection name and user-defined fields, then automatically generates the complete collection structure including all mandatory fields (_id, creatorId, createdAt, updaterId, updatedAt, __STATE__), indexes, internal endpoints, and tags. If the crud-service does not exist in the project, it should be created first using the ${toolNames.CREATE_SERVICE_FROM_MARKETPLACE} tool.`,
   CREATE_ENDPOINTS: 'Create endpoints in a Mia-Platform Console project. This tool accepts endpoint type (custom or crud), name, and target (service name for custom endpoints or collection name for crud endpoints), then automatically generates the complete endpoint structure with all required fields, routes, and configurations.',
+  CREATE_VERSION: `
+    Create a new version of a project configuration starting from a revision.
+    A version is an immutable snapshot (a tag) of the configuration of a revision at the moment of its creation, and it can be deployed with the ${toolNames.DEPLOY_PROJECT} tool using refType "version".
+    The source revision must exist and the version name must not be already used: both can be checked with the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool.
+    Before calling this tool, ask the user to confirm the version name and the source revision.
+  `,
+  GET_VERSION: `Get the details of a version of a project configuration: the commit it points to, its description and release note, and the revision it was created from. Version names can be found with the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool.`,
+  DELETE_VERSION: `
+    Delete a version of a project configuration. The revision the version was created from is not affected.
+    This is a destructive and irreversible operation: ALWAYS ask the user for explicit confirmation before calling this tool, stating the name of the version that will be deleted.
+  `,
   LIST_PUBLIC_VARIABLES: `
   List the public variables of a project for a specific revision or tag.
   Public variables are non-secret key/value pairs with a value for each environment, which can be interpolated in the project configuration.
@@ -194,6 +216,11 @@ export const paramsDescriptions = {
   REVISION_ID: `The revision to save the changes to. Can be found in the revisions field of the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool`,
   PUBLIC_VARIABLES_UPSERT: `The public variables to create or update. Each item has a name (uppercase letters, digits and underscores, starting with a letter, e.g. "API_BASE_URL") and an environments object mapping each environment id to the value to set, e.g. {"name": "API_BASE_URL", "environments": {"DEV": "https://dev.example.com", "PROD": "https://example.com"}}. Environment ids can be found in the environments field of the ${toolNames.GET_PROJECT_INFO} tool. Environments not listed keep their current value.`,
   PUBLIC_VARIABLES_DELETE: `The names of the public variables to delete. Each variable must exist and must not be read-only.`,
+  REVISION_NAME: `The name of the revision to create the version from. Can be found in the revisions field of the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool`,
+  NEW_VERSION_NAME: 'The name of the version to create. It must be unique in the project and can contain only letters, numbers, underscores, dots, dashes and curly braces',
+  VERSION_NAME: `The name of the version. Can be found in the versions field of the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool`,
+  VERSION_MESSAGE: 'Optional message describing the version',
+  VERSION_RELEASE_DESCRIPTION: 'Optional release note of the version',
   SERVICES: `The services to create or update. The key is the name of the service, the value is the service object. If the service not exists in the project, create it with ${toolNames.CREATE_SERVICE_FROM_MARKETPLACE} tool.
   An example of a service is:
   {
@@ -334,9 +361,12 @@ export const paramsDescriptions = {
 `,
 
   // Deploy
+  DEPLOY_TYPE: 'The deploy strategy: deploy_all (default) deploys all services, smart_deploy deploys only the services whose configuration changed since the last deploy',
+  FORCE_DEPLOY_WHEN_NO_SEMVER: 'Only with deploy_all: when true, also redeploys services whose image tag is not a semantic version (e.g. latest). Defaults to false',
   PIPELINE_ID: `The id of the pipeline to check the status of. Can be found in the response of the ${toolNames.DEPLOY_PROJECT} tool`,
 
   // Runtime
   POD_NAME: `The name of the pod to get the logs from. Can be found in the response of the ${toolNames.LIST_PODS} tool`,
   CONTAINER_NAME: `The name of the container pod to get the logs from. Can be found in the response of the ${toolNames.LIST_PODS} tool`,
+  POD_NAMES: `The names of the pods to restart. Can be found in the response of the ${toolNames.LIST_PODS} tool`,
 }

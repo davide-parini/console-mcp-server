@@ -43,7 +43,9 @@ import {
   Config,
   ConfigToSave,
   ConfigurationRefType,
+  CreatedVersion,
   DockerSuggestionPrefix,
+  ProjectVersion,
   PublicVariablesChanges,
   ResourcesToCreate,
   RetrievedConfiguration,
@@ -52,7 +54,7 @@ import {
   UpdatePublicVariablesResponse,
 } from './types/configuration'
 import { BackendClient, BackendClientInternal } from './backendClient'
-import { CompareForDeployResponse, PipelineStatus, TriggerDeployResponse } from './types/deploy'
+import { CompareForDeployResponse, DeployType, PipelineStatus, TriggerDeployResponse } from './types/deploy'
 import { DeployClient, DeployClientInternal } from './deployClient'
 import { FeatureToggleClient, FeatureToggleClientInternal } from './featureToggleClient'
 import { IAMClient, IAMClientInternal } from './iamClient'
@@ -126,6 +128,15 @@ export interface IAPIClient {
     endpointName: string,
     endpointTarget: string,
   ): Promise<SaveResponse>
+  createVersion(
+    projectID: string,
+    versionName: string,
+    revisionName: string,
+    message?: string,
+    releaseDescription?: string,
+  ): Promise<CreatedVersion>
+  getVersion(projectID: string, versionName: string): Promise<ProjectVersion>
+  deleteVersion(projectID: string, versionName: string): Promise<void>
   // #endregion
 
   // #region Deploy Methods
@@ -134,6 +145,8 @@ export interface IAPIClient {
     environment: string,
     revision: string,
     revisionType: string,
+    deployType?: DeployType,
+    forceDeployWhenNoSemver?: boolean,
   ): Promise<TriggerDeployResponse>
   compareProjectEnvironmentFromRevisionForDeploy(
     projectID: string,
@@ -158,6 +171,7 @@ export interface IAPIClient {
     containerName: string,
     lines?: number,
   ): Promise<string>
+  restartPod(projectID: string, environmentID: string, podName: string): Promise<void>
   // #endregion
 
   // #region Marketplace Methods
@@ -401,13 +415,38 @@ export class APIClient implements IAPIClient {
     }
   }
 
+  async createVersion (
+    projectID: string,
+    versionName: string,
+    revisionName: string,
+    message?: string,
+    releaseDescription?: string,
+  ): Promise<CreatedVersion> {
+    return await this.#backendClient.createProjectVersion(projectID, {
+      tagName: versionName,
+      ref: revisionName,
+      ...message && { message },
+      ...releaseDescription && { releaseDescription },
+    })
+  }
+
+  async getVersion (projectID: string, versionName: string): Promise<ProjectVersion> {
+    return await this.#backendClient.getProjectVersion(projectID, versionName)
+  }
+
+  async deleteVersion (projectID: string, versionName: string): Promise<void> {
+    return await this.#backendClient.deleteProjectVersion(projectID, versionName)
+  }
+
   async deployProjectEnvironmentFromRevision (
     projectID: string,
     environment: string,
     revision: string,
     revisionType: string,
+    deployType?: DeployType,
+    forceDeployWhenNoSemver?: boolean,
   ): Promise<TriggerDeployResponse> {
-    return await this.#deployClient.triggerDeploy(projectID, environment, revision, revisionType)
+    return await this.#deployClient.triggerDeploy(projectID, environment, revision, revisionType, deployType, forceDeployWhenNoSemver)
   }
 
   async compareProjectEnvironmentFromRevisionForDeploy (
@@ -440,6 +479,10 @@ export class APIClient implements IAPIClient {
     lines?: number,
   ): Promise<string> {
     return await this.#kubernetesClient.podLogs(projectID, environmentID, podName, containerName, lines)
+  }
+
+  async restartPod (projectID: string, environmentID: string, podName: string): Promise<void> {
+    return await this.#kubernetesClient.restartPod(projectID, environmentID, podName)
   }
 
   async listMarketplaceItems (tenantID?: string, type?: string, search?: string): Promise<Record<string, unknown>[]> {
@@ -874,6 +917,15 @@ export interface APIClientMockFunctions {
   ) => Promise<UpdatePublicVariablesResponse>
   createServiceFromMarketplaceItemMockFn?: (projectID: string) => Promise<SaveResponse>
   createEndpointsMockFn?: (projectID: string) => Promise<SaveResponse>
+  createVersionMockFn?: (
+    projectID: string,
+    versionName: string,
+    revisionName: string,
+    message?: string,
+    releaseDescription?: string,
+  ) => Promise<CreatedVersion>
+  getVersionMockFn?: (projectID: string, versionName: string) => Promise<ProjectVersion>
+  deleteVersionMockFn?: (projectID: string, versionName: string) => Promise<void>
   // #endregion
 
   // #region Deploy Methods
@@ -882,6 +934,8 @@ export interface APIClientMockFunctions {
     environment: string,
     revision: string,
     revisionType: string,
+    deployType?: DeployType,
+    forceDeployWhenNoSemver?: boolean,
   ) => Promise<TriggerDeployResponse>
   compareProjectEnvironmentFromRevisionForDeployMockFn?: (
     projectID: string,
@@ -906,6 +960,7 @@ export interface APIClientMockFunctions {
     containerName: string,
     lines?: number,
   ) => Promise<string>
+  restartPodMockFn?: (projectID: string, environmentID: string, podName: string) => Promise<void>
   // #endregion
 
   // #region Marketplace Methods
@@ -1070,6 +1125,36 @@ export class APIClientMock implements IAPIClient {
     return this.mocks.createEndpointsMockFn(projectID)
   }
 
+  async createVersion (
+    projectID: string,
+    versionName: string,
+    revisionName: string,
+    message?: string,
+    releaseDescription?: string,
+  ): Promise<CreatedVersion> {
+    if (!this.mocks.createVersionMockFn) {
+      throw new Error('createVersionMockFn not mocked')
+    }
+
+    return this.mocks.createVersionMockFn(projectID, versionName, revisionName, message, releaseDescription)
+  }
+
+  async getVersion (projectID: string, versionName: string): Promise<ProjectVersion> {
+    if (!this.mocks.getVersionMockFn) {
+      throw new Error('getVersionMockFn not mocked')
+    }
+
+    return this.mocks.getVersionMockFn(projectID, versionName)
+  }
+
+  async deleteVersion (projectID: string, versionName: string): Promise<void> {
+    if (!this.mocks.deleteVersionMockFn) {
+      throw new Error('deleteVersionMockFn not mocked')
+    }
+
+    return this.mocks.deleteVersionMockFn(projectID, versionName)
+  }
+
   // #endregion
 
   // #region Deploy Methods
@@ -1079,12 +1164,14 @@ export class APIClientMock implements IAPIClient {
     environment: string,
     revision: string,
     revisionType: string,
+    deployType?: DeployType,
+    forceDeployWhenNoSemver?: boolean,
   ): Promise<TriggerDeployResponse> {
     if (!this.mocks.deployProjectEnvironmentFromRevisionMockFn) {
       throw new Error('deployProjectEnvironmentFromRevisionMockFn not mocked')
     }
 
-    return this.mocks.deployProjectEnvironmentFromRevisionMockFn(projectID, environment, revision, revisionType)
+    return this.mocks.deployProjectEnvironmentFromRevisionMockFn(projectID, environment, revision, revisionType, deployType, forceDeployWhenNoSemver)
   }
 
   async compareProjectEnvironmentFromRevisionForDeploy (
@@ -1137,6 +1224,14 @@ export class APIClientMock implements IAPIClient {
     }
 
     return this.mocks.podLogsMockFn(projectID, environmentID, podName, containerName, lines)
+  }
+
+  async restartPod (projectID: string, environmentID: string, podName: string): Promise<void> {
+    if (!this.mocks.restartPodMockFn) {
+      throw new Error('restartPodMockFn not mocked')
+    }
+
+    return this.mocks.restartPodMockFn(projectID, environmentID, podName)
   }
 
   // #endregion
