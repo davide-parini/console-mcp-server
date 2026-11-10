@@ -688,6 +688,27 @@ suite('apply public variables changes', () => {
     t.assert.deepStrictEqual(currentVariables[0].environments.DEV, { value: 'https://dev.api' })
   })
 
+  test('fills the missing environments of created and updated variables with an empty value', async (t: TestContext) => {
+    const result = applyPublicVariablesChanges(currentVariables, {
+      upsert: [
+        { name: 'LOG_LEVEL', environments: { PROD: 'info' } },
+        { name: 'NEW_VAR', environments: { DEV: 'a' } },
+      ],
+    }, [ 'DEV', 'PROD', 'TEST' ])
+
+    t.assert.deepStrictEqual(result.publicVariables, [
+      // not touched by the changes: left as it is
+      currentVariables[0],
+      // updated: existing values kept, missing environments filled
+      { name: 'LOG_LEVEL', environments: { DEV: { value: 'debug' }, PROD: { value: 'info' }, TEST: { value: '' } } },
+      currentVariables[2],
+      // created: missing environments filled
+      { name: 'NEW_VAR', environments: { DEV: { value: 'a' }, PROD: { value: '' }, TEST: { value: '' } } },
+    ])
+    t.assert.deepStrictEqual(result.created, [ 'NEW_VAR' ])
+    t.assert.deepStrictEqual(result.updated, [ 'LOG_LEVEL' ])
+  })
+
   test('deletes variables', async (t: TestContext) => {
     const result = applyPublicVariablesChanges(currentVariables, { delete: [ 'LOG_LEVEL' ] })
 
@@ -830,7 +851,7 @@ suite('update public variables', () => {
         { name: 'API_URL', environments: { DEV: 'https://new-dev.api' } },
         { name: 'NEW_VAR', environments: { PROD: 'value' } },
       ],
-    })
+    }, [ 'DEV', 'PROD' ])
 
     t.assert.deepStrictEqual(result, {
       saveResponse: { id: 'new-commit-id' },
@@ -848,7 +869,7 @@ suite('update public variables', () => {
         unsecretedVariables: [
           { name: 'API_URL', environments: { DEV: { value: 'https://new-dev.api' }, PROD: { value: 'https://api' } } },
           currentConfiguration.unsecretedVariables[1],
-          { name: 'NEW_VAR', environments: { PROD: { value: 'value' } } },
+          { name: 'NEW_VAR', environments: { PROD: { value: 'value' }, DEV: { value: '' } } },
         ],
       },
       previousSave: 'previous-commit-id',
@@ -870,7 +891,7 @@ suite('update public variables', () => {
       })
 
     const client = new APIClient(mockedEndpoint)
-    const result = await client.updatePublicVariables(projectId, refId, { delete: [ 'API_URL' ] })
+    const result = await client.updatePublicVariables(projectId, refId, { delete: [ 'API_URL' ] }, [ 'DEV', 'PROD' ])
 
     t.assert.deepStrictEqual(result.deleted, [ 'API_URL' ])
     t.assert.deepStrictEqual(savedBody?.config.unsecretedVariables, [ currentConfiguration.unsecretedVariables[1] ])
@@ -883,7 +904,7 @@ suite('update public variables', () => {
 
     const client = new APIClient(mockedEndpoint)
     await t.assert.rejects(
-      async () => await client.updatePublicVariables(projectId, refId, { delete: [ 'LOCKED' ] }),
+      async () => await client.updatePublicVariables(projectId, refId, { delete: [ 'LOCKED' ] }, [ 'DEV', 'PROD' ]),
       { message: 'read-only public variables cannot be modified or deleted: LOCKED' },
     )
     // no POST interceptor is registered and net connect is disabled: reaching the save would fail differently

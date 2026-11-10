@@ -1786,10 +1786,10 @@ suite('save public variables tool', () => {
 
   // applies the changes to a fixed configuration, as the real client does after reading it
   function updatePublicVariablesMock () {
-    return mock.fn(async (projectId: string, ref: string, changes: PublicVariablesChanges) => {
+    return mock.fn(async (projectId: string, ref: string, changes: PublicVariablesChanges, environmentIds: string[]) => {
       assert.equal(projectId, testProjectId)
       assert.equal(ref, refId)
-      const { created, updated, deleted } = applyPublicVariablesChanges(currentPublicVariables, changes)
+      const { created, updated, deleted } = applyPublicVariablesChanges(currentPublicVariables, changes, environmentIds)
       return { saveResponse: mockSaveResponse, created, updated, deleted }
     })
   }
@@ -1851,6 +1851,8 @@ suite('save public variables tool', () => {
     t.assert.equal(result.isError, undefined)
     t.assert.equal(updatePublicVariablesMockFn.mock.callCount(), 1)
     t.assert.deepEqual(updatePublicVariablesMockFn.mock.calls[0].arguments[2], { upsert, delete: undefined })
+    // all the project environments are passed down, to be filled on the saved variables
+    t.assert.deepEqual(updatePublicVariablesMockFn.mock.calls[0].arguments[3], [ 'DEV', 'PROD' ])
     t.assert.deepEqual(result.structuredContent, { created: [ 'NEW_VAR' ], updated: [], deleted: [] })
     t.assert.deepEqual(result.content, [
       {

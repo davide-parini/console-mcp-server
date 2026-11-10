@@ -543,7 +543,7 @@ export function addConfigurationCapabilities (server: McpServer, client: IAPICli
           throw new Error(`unknown environments: ${unknownEnvIds.join(', ')}. Available environments: ${[ ...projectEnvIds ].join(', ')}`)
         }
 
-        const { created, updated, deleted } = await client.updatePublicVariables(projectId, refId, changes)
+        const { created, updated, deleted } = await client.updatePublicVariables(projectId, refId, changes, [ ...projectEnvIds ])
         return {
           structuredContent: { created, updated, deleted },
           content: [

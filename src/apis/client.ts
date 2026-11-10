@@ -111,6 +111,7 @@ export interface IAPIClient {
     projectId: string,
     refId: string,
     changes: PublicVariablesChanges,
+    environmentIds: string[],
   ): Promise<UpdatePublicVariablesResponse>
   createServiceFromMarketplaceItem(
     projectID: string,
@@ -353,6 +354,7 @@ export class APIClient implements IAPIClient {
     prjID: string,
     refID: string,
     changes: PublicVariablesChanges,
+    environmentIds: string[],
   ): Promise<UpdatePublicVariablesResponse> {
     let applied: AppliedPublicVariablesChanges | undefined
     const saveResponse = await this.#saveUpdatedConfiguration(
@@ -360,7 +362,7 @@ export class APIClient implements IAPIClient {
       refID,
       PUBLIC_VARIABLES_SAVE_TITLE,
       (currentConfig) => {
-        applied = applyPublicVariablesChanges(currentConfig.unsecretedVariables || [], changes)
+        applied = applyPublicVariablesChanges(currentConfig.unsecretedVariables || [], changes, environmentIds)
         return { ...currentConfig, unsecretedVariables: applied.publicVariables }
       },
     )
@@ -914,6 +916,7 @@ export interface APIClientMockFunctions {
     projectId: string,
     refId: string,
     changes: PublicVariablesChanges,
+    environmentIds: string[],
   ) => Promise<UpdatePublicVariablesResponse>
   createServiceFromMarketplaceItemMockFn?: (projectID: string) => Promise<SaveResponse>
   createEndpointsMockFn?: (projectID: string) => Promise<SaveResponse>
@@ -1087,12 +1090,13 @@ export class APIClientMock implements IAPIClient {
     projectId: string,
     refId: string,
     changes: PublicVariablesChanges,
+    environmentIds: string[],
   ): Promise<UpdatePublicVariablesResponse> {
     if (!this.mocks.updatePublicVariablesMockFn) {
       throw new Error('updatePublicVariablesMockFn not mocked')
     }
 
-    return this.mocks.updatePublicVariablesMockFn(projectId, refId, changes)
+    return this.mocks.updatePublicVariablesMockFn(projectId, refId, changes, environmentIds)
   }
 
   async createServiceFromMarketplaceItem (
@@ -1373,6 +1377,9 @@ export function validatePublicVariablesChanges (changes: PublicVariablesChanges)
 /**
  * Applies the requested changes to the given public variables, without mutating them.
  * Upserted variables are merged per environment: values of environments not listed in the change are kept.
+ * Every created or updated variable then holds an entry for each of the given environment ids, with an empty
+ * value for the environments that have none, so that the saved structure covers all the project environments
+ * as the Console expects. Variables not touched by the changes are left as they are.
  * New variables are appended in the order they are requested.
  * Throws, so that nothing gets saved, if the changes are structurally invalid, if a variable to delete
  * does not exist, or if a read-only variable would be modified or deleted.
@@ -1380,6 +1387,7 @@ export function validatePublicVariablesChanges (changes: PublicVariablesChanges)
 export function applyPublicVariablesChanges (
   currentVariables: PublicVariable[],
   changes: PublicVariablesChanges,
+  environmentIds: string[] = [],
 ): AppliedPublicVariablesChanges {
   validatePublicVariablesChanges(changes)
   const upsert = changes.upsert || []
@@ -1412,7 +1420,10 @@ export function applyPublicVariablesChanges (
       updated.push(variable.name)
       return {
         ...variable,
-        environments: { ...variable.environments, ...toPublicVariableEnvironments(change.environments) },
+        environments: withAllEnvironments(
+          { ...variable.environments, ...toPublicVariableEnvironments(change.environments) },
+          environmentIds,
+        ),
       }
     })
 
@@ -1420,7 +1431,10 @@ export function applyPublicVariablesChanges (
   for (const change of upsert) {
     if (!currentByName.has(change.name)) {
       created.push(change.name)
-      publicVariables.push({ name: change.name, environments: toPublicVariableEnvironments(change.environments) })
+      publicVariables.push({
+        name: change.name,
+        environments: withAllEnvironments(toPublicVariableEnvironments(change.environments), environmentIds),
+      })
     }
   }
 
@@ -1429,6 +1443,14 @@ export function applyPublicVariablesChanges (
 
 function toPublicVariableEnvironments (environments: Record<string, string>): PublicVariable['environments'] {
   return Object.fromEntries(Object.entries(environments).map(([ envId, value ]) => [ envId, { value } ]))
+}
+
+function withAllEnvironments (
+  environments: PublicVariable['environments'],
+  environmentIds: string[],
+): PublicVariable['environments'] {
+  const missing = environmentIds.filter((envId) => !(envId in environments))
+  return { ...environments, ...Object.fromEntries(missing.map((envId) => [ envId, { value: '' } ])) }
 }
 
 function findDuplicates (values: string[]): string[] {

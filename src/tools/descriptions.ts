@@ -143,7 +143,7 @@ Do never attemp to fetch all the logs without a date range filter, as it could l
   SAVE_PUBLIC_VARIABLES: `
   Create, update or delete public variables of a project in a revision, saving a new version of the project configuration.
   The tool takes only the changes to apply: the latest configuration is read and saved within the same call, and variables not listed are left untouched.
-  - upsert: for each variable, the value to set for each listed environment. If the variable exists, only the listed environments are changed and the values of other environments are kept; otherwise it is created.
+  - upsert: for each variable, the value to set for each listed environment. If the variable exists, only the listed environments are changed and the values of other environments are kept; otherwise it is created. Every created or updated variable is saved with an entry for each project environment: environments without a value get an empty value.
   - delete: names of the variables to remove.
   All changes are validated before saving and the call fails without saving anything if: no change is requested, a name is invalid or repeated, a variable is both upserted and deleted, a variable to delete does not exist, a read-only variable would be modified or deleted, or an environment id does not belong to the project.
   Saving does not deploy: the changes take effect on the environments only after the next deploy, which can be done with the ${toolNames.DEPLOY_PROJECT} tool.
@@ -214,7 +214,7 @@ export const paramsDescriptions = {
   ENDPOINT_NAME: `The name of the endpoint to create. This will be used as the basePath (e.g., "/customer" for name "customer").`,
   ENDPOINT_TARGET: `The target for the endpoint. For custom endpoints, this is the service name. For crud endpoints, this is the collection name.`,
   REVISION_ID: `The revision to save the changes to. Can be found in the revisions field of the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool`,
-  PUBLIC_VARIABLES_UPSERT: `The public variables to create or update. Each item has a name (uppercase letters, digits and underscores, starting with a letter, e.g. "API_BASE_URL") and an environments object mapping each environment id to the value to set, e.g. {"name": "API_BASE_URL", "environments": {"DEV": "https://dev.example.com", "PROD": "https://example.com"}}. Environment ids can be found in the environments field of the ${toolNames.GET_PROJECT_INFO} tool. Environments not listed keep their current value.`,
+  PUBLIC_VARIABLES_UPSERT: `The public variables to create or update. Each item has a name (uppercase letters, digits and underscores, starting with a letter, e.g. "API_BASE_URL") and an environments object mapping each environment id to the value to set, e.g. {"name": "API_BASE_URL", "environments": {"DEV": "https://dev.example.com", "PROD": "https://example.com"}}. Environment ids can be found in the environments field of the ${toolNames.GET_PROJECT_INFO} tool. Environments not listed keep their current value, or get an empty value if they have none.`,
   PUBLIC_VARIABLES_DELETE: `The names of the public variables to delete. Each variable must exist and must not be read-only.`,
   REVISION_NAME: `The name of the revision to create the version from. Can be found in the revisions field of the ${toolNames.LIST_CONFIGURATION_REVISIONS} tool`,
   NEW_VERSION_NAME: 'The name of the version to create. It must be unique in the project and can contain only letters, numbers, underscores, dots, dashes and curly braces',
